@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <title>Consumo de Ração</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: #f1f5f9; color: #0f172a; padding: 16px; display: flex; justify-content: center; }
+    .card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
+    h2 { margin-bottom: 16px; color: #1e3a8a; text-align: center; }
+    .status-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #e2e8f0; border-radius: 6px; font-size: 14px; font-weight: bold; margin-bottom: 20px; }
+    .online { color: #16a34a; }
+    .offline { color: #dc2626; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+    input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; }
+    button { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+    .btn-save { background-color: #2563eb; color: white; }
+    .btn-sync { background-color: #059669; color: white; margin-top: 12px; }
+    .badge { background: #3b82f6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .alert { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 14px; text-align: center; display: none; }
+    .alert-success { background: #dcfce7; color: #15803d; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Consumo de Ração</h2>
+    
+    <div class="status-bar">
+      <span id="netStatus" class="offline">Verificando...</span>
+      <span>Pendentes: <span id="pendingCount" class="badge">0</span></span>
+    </div>
+
+    <form id="racaoForm">
+      <div class="form-group">
+        <label for="data">Data:</label>
+        <input type="date" id="data" required>
+      </div>
+
+      <div class="form-group">
+        <label for="racaokg">Quantidade Ração (KG):</label>
+        <input type="number" id="racaokg" step="0.1" placeholder="Ex: 250.5" required>
+      </div>
+
+      <div class="form-group">
+        <label for="animais">Quantidade Animais:</label>
+        <input type="number" id="animais" placeholder="Ex: 120" required>
+      </div>
+
+      <button type="submit" class="btn-save">Salvar Registro</button>
+    </form>
+
+    <button id="btnSync" class="btn-sync">Sincronizar com Planilha</button>
+    <div id="msgBox" class="alert"></div>
+  </div>
+
+  <script>
+    // URL DO SEU GOOGLE APPS SCRIPT
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjfPSsQXv7q9hAq5mUQ3dzaDLWrgeo6aj3UUWoPcackMUtFKljJqZPY7qNAclPOOM/exec";
+
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+
+    // Inicializar IndexedDB
+    let db;
+    const request = indexedDB.open("RacaoDB", 1);
+    request.onupgradeneeded = (e) => {
+      db = e.target.result;
+      db.createObjectStore("registros", { keyPath: "id", autoIncrement: true });
+    };
+    request.onsuccess = (e) => {
+      db = e.target.result;
+      atualizarContador();
+      sincronizarDados();
+    };
+
+    // Preencher data de hoje por padrão
+    document.getElementById('data').valueAsDate = new Date();
+
+    // Atualizar status de rede
+    function updateOnlineStatus() {
+      const netStatus = document.getElementById('netStatus');
+      if (navigator.onLine) {
+        netStatus.textContent = "● Online";
+        netStatus.className = "online";
+        sincronizarDados();
+      } else {
+        netStatus.textContent = "● Offline";
+        netStatus.className = "offline";
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+
+    // Salvar Registro no Banco Local
+    document.getElementById('racaoForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const registro = {
+        data: document.getElementById('data').value,
+        racaokg: parseFloat(document.getElementById('racaokg').value),
+        animais: parseInt(document.getElementById('animais').value),
+        timestamp: new Date().getTime()
+      };
+
+      const tx = db.transaction("registros", "readwrite");
+      tx.objectStore("registros").add(registro);
+      tx.oncomplete = () => {
+        mostrarMensagem("Registro salvo no celular!");
+        document.getElementById('racaokg').value = '';
+        document.getElementById('animais').value = '';
+        atualizarContador();
+        sincronizarDados();
+      };
+    });
+
+    // Atualizar contador de pendentes
+    function atualizarContador() {
+      if (!db) return;
+      const tx = db.transaction("registros", "readonly");
+      const store = tx.objectStore("registros");
+      const countReq = store.count();
+      countReq.onsuccess = () => {
+        document.getElementById('pendingCount').textContent = countReq.result;
+      };
+    }
+
+    // Sincronizar com a Planilha
+    async function sincronizarDados() {
+      if (!navigator.onLine || !db) return;
+
+      const tx = db.transaction("registros", "readonly");
+      const store = tx.objectStore("registros");
+      const getAllReq = store.getAll();
+
+      getAllReq.onsuccess = async () => {
+        const itens = getAllReq.result;
+        if (itens.length === 0) return;
+
+        try {
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(itens)
+          });
+
+          // Limpar banco local após envio
+          const clearTx = db.transaction("registros", "readwrite");
+          clearTx.objectStore("registros").clear();
+          clearTx.oncomplete = () => {
+            mostrarMensagem("Sincronizado com a planilha!");
+            atualizarContador();
+          };
+        } catch (err) {
+          console.error("Erro na sincronização:", err);
+        }
+      };
+    }
+
+    document.getElementById('btnSync').addEventListener('click', sincronizarDados);
+
+    function mostrarMensagem(texto) {
+      const msgBox = document.getElementById('msgBox');
+      msgBox.textContent = texto;
+      msgBox.className = "alert alert-success";
+      msgBox.style.display = "block";
+      setTimeout(() => { msgBox.style.display = "none"; }, 3000);
+    }
+  </script>
+</body>
+</html>
