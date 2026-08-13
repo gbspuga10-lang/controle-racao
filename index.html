@@ -7,7 +7,7 @@
   <title>Consumo de Ração</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background-color: #f1f5f9; color: #0f172a; padding: 16px; display: flex; justify-content: center; }
+    body { background-color: #f1f5f9; color: #0f172a; padding: 16px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
     .card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
     h2 { margin-bottom: 16px; color: #1e3a8a; text-align: center; }
     .status-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #e2e8f0; border-radius: 6px; font-size: 14px; font-weight: bold; margin-bottom: 20px; }
@@ -21,11 +21,36 @@
     .badge { background: #3b82f6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
     .alert { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 14px; text-align: center; display: none; }
     .alert-success { background: #dcfce7; color: #15803d; }
+    .alert-error { background: #fee2e2; color: #b91c1c; display: block; margin-bottom: 12px; }
+    
+    /* Telas */
+    #loginScreen { display: block; }
+    #appScreen { display: none; }
+    .pin-input { font-size: 24px; text-align: center; letter-spacing: 8px; }
   </style>
 </head>
 <body>
 
-  <div class="card">
+  <!-- TELA DE ATIVAÇÃO / PRIMEIRO ACESSO -->
+  <div id="loginScreen" class="card">
+    <h2>Ativação do Dispositivo</h2>
+    <p style="text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px;">
+      Digite a senha de acesso da fazenda para liberar este dispositivo.
+    </p>
+    
+    <div id="loginError" class="alert alert-error" style="display: none;">Senha incorreta!</div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="senha">Senha / PIN de Ativação:</label>
+        <input type="password" id="senha" class="pin-input" placeholder="****" inputmode="numeric" required>
+      </div>
+      <button type="submit" class="btn-save">Ativar Dispositivo</button>
+    </form>
+  </div>
+
+  <!-- TELA DO APLICATIVO -->
+  <div id="appScreen" class="card">
     <h2>Consumo de Ração</h2>
     
     <div class="status-bar">
@@ -56,15 +81,51 @@
   </div>
 
   <script>
-    // COLE ABAIXO A SUA URL DO GOOGLE APPS SCRIPT
+    // CONFIGURAÇÕES
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjfPSsQXv7q9hAq5mUQ3dzaDLWrgeo6aj3UUWoPcackMUtFKljJqZPY7qNAclPOOM/exec";
+    const SENHA_CORRETA = "2026"; // <--- ALTERE A SENHA AQUI
 
-    // Registrar Service Worker
+    // LÓGICA DE ATIVAÇÃO PERMANENTE
+    const loginScreen = document.getElementById('loginScreen');
+    const appScreen = document.getElementById('appScreen');
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+
+    // Verifica se o dispositivo JÁ foi ativado anteriormente
+    if (localStorage.getItem('dispositivoAtivado') === 'true') {
+      mostrarApp();
+    }
+
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const senhaDigitada = document.getElementById('senha').value;
+      if (senhaDigitada === SENHA_CORRETA) {
+        // Salva autorização permanente no dispositivo
+        localStorage.setItem('dispositivoAtivado', 'true');
+        loginError.style.display = 'none';
+        document.getElementById('senha').value = '';
+        mostrarApp();
+      } else {
+        loginError.style.display = 'block';
+        document.getElementById('senha').value = '';
+      }
+    });
+
+    function mostrarApp() {
+      loginScreen.style.display = 'none';
+      appScreen.style.display = 'block';
+      if (db) {
+        atualizarContador();
+        sincronizarDados();
+      }
+    }
+
+    // REGISTRO DO SERVICE WORKER
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js');
     }
 
-    // Inicializar Banco de Dados Local (IndexedDB)
+    // BANCO DE DADOS LOCAL (IndexedDB)
     let db;
     const request = indexedDB.open("RacaoDB", 1);
     request.onupgradeneeded = (e) => {
@@ -73,20 +134,22 @@
     };
     request.onsuccess = (e) => {
       db = e.target.result;
-      atualizarContador();
-      sincronizarDados();
+      if (localStorage.getItem('dispositivoAtivado') === 'true') {
+        atualizarContador();
+        sincronizarDados();
+      }
     };
 
-    // Preencher data de hoje por padrão
+    // Preencher data de hoje
     document.getElementById('data').valueAsDate = new Date();
 
-    // Monitorar conexão com a internet
+    // MONITORAR REDE
     function updateOnlineStatus() {
       const netStatus = document.getElementById('netStatus');
       if (navigator.onLine) {
         netStatus.textContent = "● Online";
         netStatus.className = "online";
-        sincronizarDados();
+        if (localStorage.getItem('dispositivoAtivado') === 'true') sincronizarDados();
       } else {
         netStatus.textContent = "● Offline";
         netStatus.className = "offline";
@@ -96,11 +159,10 @@
     window.addEventListener('offline', updateOnlineStatus);
     updateOnlineStatus();
 
-    // Salvar Registro no Banco Local
+    // SALVAR REGISTRO
     document.getElementById('racaoForm').addEventListener('submit', (e) => {
       e.preventDefault();
       
-      // Formatação de Data para o padrão PT-BR (DD/MM/AAAA)
       const rawDate = document.getElementById('data').value;
       const [ano, mes, dia] = rawDate.split('-');
       const dataFormatada = `${dia}/${mes}/${ano}`;
@@ -130,7 +192,6 @@
       };
     });
 
-    // Atualizar contador de pendentes na tela
     function atualizarContador() {
       if (!db) return;
       const tx = db.transaction("registros", "readonly");
@@ -141,7 +202,6 @@
       };
     }
 
-    // Sincronização Automática com a Planilha
     async function sincronizarDados() {
       if (!navigator.onLine || !db) return;
 
@@ -161,7 +221,6 @@
             body: JSON.stringify(itens)
           });
 
-          // Limpar banco local após envio com sucesso
           const clearTx = db.transaction("registros", "readwrite");
           clearTx.objectStore("registros").clear();
           clearTx.oncomplete = () => {
