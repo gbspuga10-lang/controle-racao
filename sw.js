@@ -1,4 +1,4 @@
-const CACHE_NAME = 'racao-app-v2';
+const CACHE_NAME = 'racao-app-v3';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -8,8 +8,19 @@ self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
+// Apaga caches antigos (v1, v2) automaticamente quando o app ativa
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cache) => {
+          if (cache !== CACHE_NAME) {
+            return caches.delete(cache);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (e) => {
