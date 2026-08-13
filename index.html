@@ -18,7 +18,6 @@
     input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; }
     button { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 8px; }
     .btn-save { background-color: #2563eb; color: white; }
-    .btn-sync { background-color: #059669; color: white; margin-top: 12px; }
     .badge { background: #3b82f6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
     .alert { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 14px; text-align: center; display: none; }
     .alert-success { background: #dcfce7; color: #15803d; }
@@ -53,12 +52,11 @@
       <button type="submit" class="btn-save">Salvar Registro</button>
     </form>
 
-    <button id="btnSync" class="btn-sync">Sincronizar com Planilha</button>
     <div id="msgBox" class="alert"></div>
   </div>
 
   <script>
-    // URL DO SEU GOOGLE APPS SCRIPT
+    // URL DO SEU GOOGLE APPS SCRIPT (SUBSTITUA PELA SUA URL)
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjfPSsQXv7q9hAq5mUQ3dzaDLWrgeo6aj3UUWoPcackMUtFKljJqZPY7qNAclPOOM/exec";
 
     // Registrar Service Worker
@@ -66,7 +64,7 @@
       navigator.serviceWorker.register('./sw.js');
     }
 
-    // Inicializar IndexedDB
+    // Inicializar Banco de Dados Local (IndexedDB)
     let db;
     const request = indexedDB.open("RacaoDB", 1);
     request.onupgradeneeded = (e) => {
@@ -82,7 +80,7 @@
     // Preencher data de hoje por padrão
     document.getElementById('data').valueAsDate = new Date();
 
-    // Atualizar status de rede
+    // Monitorar conexão com a internet
     function updateOnlineStatus() {
       const netStatus = document.getElementById('netStatus');
       if (navigator.onLine) {
@@ -101,8 +99,14 @@
     // Salvar Registro no Banco Local
     document.getElementById('racaoForm').addEventListener('submit', (e) => {
       e.preventDefault();
+      
+      // Formatação de Data para o padrão PT-BR (DD/MM/AAAA)
+      const rawDate = document.getElementById('data').value;
+      const [ano, mes, dia] = rawDate.split('-');
+      const dataFormatada = `${dia}/${mes}/${ano}`;
+
       const registro = {
-        data: document.getElementById('data').value,
+        data: dataFormatada,
         racaokg: parseFloat(document.getElementById('racaokg').value),
         animais: parseInt(document.getElementById('animais').value),
         timestamp: new Date().getTime()
@@ -115,11 +119,18 @@
         document.getElementById('racaokg').value = '';
         document.getElementById('animais').value = '';
         atualizarContador();
+        
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+          navigator.serviceWorker.ready.then((swReg) => {
+            return swReg.sync.register('sync-racao-dados');
+          });
+        }
+        
         sincronizarDados();
       };
     });
 
-    // Atualizar contador de pendentes
+    // Atualizar contador de pendentes na tela
     function atualizarContador() {
       if (!db) return;
       const tx = db.transaction("registros", "readonly");
@@ -130,7 +141,7 @@
       };
     }
 
-    // Sincronizar com a Planilha
+    // Sincronização Automática com a Planilha
     async function sincronizarDados() {
       if (!navigator.onLine || !db) return;
 
@@ -150,11 +161,11 @@
             body: JSON.stringify(itens)
           });
 
-          // Limpar banco local após envio
+          // Limpar banco local após envio com sucesso
           const clearTx = db.transaction("registros", "readwrite");
           clearTx.objectStore("registros").clear();
           clearTx.oncomplete = () => {
-            mostrarMensagem("Sincronizado com a planilha!");
+            mostrarMensagem("Dados sincronizados com a planilha!");
             atualizarContador();
           };
         } catch (err) {
@@ -162,8 +173,6 @@
         }
       };
     }
-
-    document.getElementById('btnSync').addEventListener('click', sincronizarDados);
 
     function mostrarMensagem(texto) {
       const msgBox = document.getElementById('msgBox');
