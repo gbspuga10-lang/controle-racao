@@ -187,7 +187,9 @@
       if (loginScreen) loginScreen.style.display = 'none';
       if (appScreen) appScreen.style.display = 'block';
       const dataInput = document.getElementById('data');
-      if (dataInput) dataInput.valueAsDate = new Date();
+      if (dataInput && !dataInput.value) {
+        dataInput.valueAsDate = new Date();
+      }
       updateOnlineStatus();
       atualizarContador();
     }
@@ -233,7 +235,7 @@
       };
     }
 
-    // Sincronizar com a planilha via POST
+    // SINCRONIZAÇÃO SEGURA (Com confirmação real do Google Apps Script)
     async function sincronizarDados() {
       if (!navigator.onLine || !db) return;
 
@@ -246,21 +248,36 @@
         if (itens.length === 0) return;
 
         try {
-          await fetch(SCRIPT_URL, {
+          // Envia os dados e segue o redirecionamento nativo do Google
+          const response = await fetch(SCRIPT_URL, {
             method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
+            redirect: 'follow',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(itens)
           });
 
-          const clearTx = db.transaction("registros", "readwrite");
-          clearTx.objectStore("registros").clear();
-          clearTx.oncomplete = () => {
-            mostrarMensagem("Dados sincronizados com a planilha!");
-            atualizarContador();
-          };
+          if (response.ok) {
+            const resText = await response.text();
+            let resJson = {};
+            try { resJson = JSON.parse(resText); } catch(e) {}
+
+            // SÓ LIMPA OS DADOS DO CELULAR SE O GOOGLE CONFIRMAR GRAVAÇÃO ("success")
+            if (resJson.result === "success" || resJson.status === "success") {
+              const clearTx = db.transaction("registros", "readwrite");
+              clearTx.objectStore("registros").clear();
+              clearTx.oncomplete = () => {
+                mostrarMensagem("Dados sincronizados com sucesso!");
+                atualizarContador();
+              };
+            } else {
+              console.error("Servidor respondeu sem sucesso:", resText);
+            }
+          } else {
+            console.error("Falha na requisição HTTP. Status:", response.status);
+          }
         } catch (err) {
-          console.error("Erro na sincronização:", err);
+          console.error("Erro na comunicação com a planilha:", err);
+          // Em caso de falha de conexão, NADA é apagado do celular
         }
       };
     }
