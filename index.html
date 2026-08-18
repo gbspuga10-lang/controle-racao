@@ -1,243 +1,171 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="manifest" href="manifest.json">
-  <title>Consumo de Ração</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background-color: #f1f5f9; color: #0f172a; padding: 16px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
-    h2 { margin-bottom: 16px; color: #1e3a8a; text-align: center; }
-    .status-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #e2e8f0; border-radius: 6px; font-size: 14px; font-weight: bold; margin-bottom: 20px; }
-    .online { color: #16a34a; }
-    .offline { color: #dc2626; }
-    .form-group { margin-bottom: 16px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
-    input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; }
-    button { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 8px; }
-    .btn-save { background-color: #2563eb; color: white; }
-    .badge { background: #3b82f6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
-    .alert { margin-top: 16px; padding: 10px; border-radius: 6px; font-size: 14px; text-align: center; display: none; }
-    .alert-success { background: #dcfce7; color: #15803d; }
-    .alert-error { background: #fee2e2; color: #b91c1c; display: block; margin-bottom: 12px; }
-    
-    /* Telas */
-    #loginScreen { display: block; }
-    #appScreen { display: none; }
-    .pin-input { font-size: 24px; text-align: center; letter-spacing: 8px; }
-  </style>
-</head>
-<body>
+<script>
+  // CONFIGURAÇÃO DA URL DO WEB APP
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqxd3WJ5OPagY6Gx7OYT6_o7KoV1Gpo2KBQUjzeHeP8-d9cQoCilsks5XTXql9GMPR/exec"; // <--- Mantenha a sua URL do Web App aqui
 
-  <!-- TELA DE ATIVAÇÃO / PRIMEIRO ACESSO -->
-  <div id="loginScreen" class="card">
-    <h2>Ativação do Dispositivo</h2>
-    <p style="text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px;">
-      Digite a senha de acesso da fazenda para liberar este dispositivo.
-    </p>
-    
-    <div id="loginError" class="alert alert-error" style="display: none;">Senha incorreta!</div>
+  const loginScreen = document.getElementById('loginScreen');
+  const appScreen = document.getElementById('appScreen');
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
 
-    <form id="loginForm">
-      <div class="form-group">
-        <label for="senha">Senha / PIN de Ativação:</label>
-        <input type="password" id="senha" class="pin-input" placeholder="****" inputmode="numeric" required>
-      </div>
-      <button type="submit" class="btn-save">Ativar Dispositivo</button>
-    </form>
-  </div>
+  // Registrar Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
 
-  <!-- TELA DO APLICATIVO -->
-  <div id="appScreen" class="card">
-    <h2>Consumo de Ração</h2>
-    
-    <div class="status-bar">
-      <span id="netStatus" class="offline">Verificando...</span>
-      <span>Pendentes: <span id="pendingCount" class="badge">0</span></span>
-    </div>
-
-    <form id="racaoForm">
-      <div class="form-group">
-        <label for="data">Data:</label>
-        <input type="date" id="data" required>
-      </div>
-
-      <div class="form-group">
-        <label for="racaokg">Quantidade Ração (KG):</label>
-        <input type="number" id="racaokg" step="0.1" placeholder="Ex: 250.5" required>
-      </div>
-
-      <div class="form-group">
-        <label for="animais">Quantidade Animais:</label>
-        <input type="number" id="animais" placeholder="Ex: 120" required>
-      </div>
-
-      <button type="submit" class="btn-save">Salvar Registro</button>
-    </form>
-
-    <div id="msgBox" class="alert"></div>
-  </div>
-
-  <script>
-    // CONFIGURAÇÕES
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqxd3WJ5OPagY6Gx7OYT6_o7KoV1Gpo2KBQUjzeHeP8-d9cQoCilsks5XTXql9GMPR/exec";
-    const SENHA_CORRETA = "2026"; // <--- SUAS CONFIGURAÇÕES AQUI
-
-    const loginScreen = document.getElementById('loginScreen');
-    const appScreen = document.getElementById('appScreen');
-    const loginForm = document.getElementById('loginForm');
-    const loginError = document.getElementById('loginError');
-
-    // Registrar Service Worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js');
-    }
-
-    // Monitorar Conexão com a Internet imediatamente
-    function updateOnlineStatus() {
-      const netStatus = document.getElementById('netStatus');
-      if (navigator.onLine) {
-        netStatus.textContent = "● Online";
-        netStatus.className = "online";
-        if (localStorage.getItem('dispositivoAtivado') === 'true') {
-          sincronizarDados();
-        }
-      } else {
-        netStatus.textContent = "● Offline";
-        netStatus.className = "offline";
-      }
-    }
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-
-    // LÓGICA DE BANCO DE DADOS LOCAL (IndexedDB)
-    let db;
-    const request = indexedDB.open("RacaoDB", 1);
-    request.onupgradeneeded = (e) => {
-      db = e.target.result;
-      if (!db.objectStoreNames.contains("registros")) {
-        db.createObjectStore("registros", { keyPath: "id", autoIncrement: true });
-      }
-    };
-    request.onsuccess = (e) => {
-      db = e.target.result;
-      verificarAtivacao();
-    };
-
-    function verificarAtivacao() {
+  // Monitorar Conexão
+  function updateOnlineStatus() {
+    const netStatus = document.getElementById('netStatus');
+    if (navigator.onLine) {
+      netStatus.textContent = "● Online";
+      netStatus.className = "online";
       if (localStorage.getItem('dispositivoAtivado') === 'true') {
-        mostrarApp();
-      } else {
-        loginScreen.style.display = 'block';
-        appScreen.style.display = 'none';
+        sincronizarDados();
       }
+    } else {
+      netStatus.textContent = "● Offline";
+      netStatus.className = "offline";
+    }
+  }
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+
+  // Banco de Dados Local (IndexedDB)
+  let db;
+  const request = indexedDB.open("RacaoDB", 1);
+  request.onupgradeneeded = (e) => {
+    db = e.target.result;
+    if (!db.objectStoreNames.contains("registros")) {
+      db.createObjectStore("registros", { keyPath: "id", autoIncrement: true });
+    }
+  };
+  request.onsuccess = (e) => {
+    db = e.target.result;
+    verificarAtivacao();
+  };
+
+  function verificarAtivacao() {
+    if (localStorage.getItem('dispositivoAtivado') === 'true') {
+      mostrarApp();
+    } else {
+      loginScreen.style.display = 'block';
+      appScreen.style.display = 'none';
+    }
+  }
+
+  // VALIDAÇÃO DA SENHA VIA API DO GOOGLE APPS SCRIPT
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const senhaDigitada = document.getElementById('senha').value;
+
+    if (!navigator.onLine) {
+      alert("Para ativar o dispositivo pela primeira vez, você precisa estar conectado à internet.");
+      return;
     }
 
-    loginForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const senhaDigitada = document.getElementById('senha').value;
-      if (senhaDigitada === SENHA_CORRETA) {
+    try {
+      // Faz a verificação no servidor do Google via API
+      const response = await fetch(`${SCRIPT_URL}?pass=${encodeURIComponent(senhaDigitada)}`);
+      const data = await response.json();
+
+      if (data.status === "success") {
         localStorage.setItem('dispositivoAtivado', 'true');
         loginError.style.display = 'none';
         document.getElementById('senha').value = '';
         mostrarApp();
       } else {
+        loginError.innerText = "Senha incorreta!";
         loginError.style.display = 'block';
         document.getElementById('senha').value = '';
       }
-    });
+    } catch (err) {
+      console.error("Erro ao validar senha:", err);
+      loginError.innerText = "Erro ao conectar ao servidor. Tente novamente.";
+      loginError.style.display = 'block';
+    }
+  });
 
-    function mostrarApp() {
-      loginScreen.style.display = 'none';
-      appScreen.style.display = 'block';
-      document.getElementById('data').valueAsDate = new Date();
-      updateOnlineStatus();
+  function mostrarApp() {
+    loginScreen.style.display = 'none';
+    appScreen.style.display = 'block';
+    document.getElementById('data').valueAsDate = new Date();
+    updateOnlineStatus();
+    atualizarContador();
+  }
+
+  // Gravar registro localmente
+  document.getElementById('racaoForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    const rawDate = document.getElementById('data').value;
+    const [ano, mes, dia] = rawDate.split('-');
+    const dataFormatada = `${dia}/${mes}/${ano}`;
+
+    const registro = {
+      data: dataFormatada,
+      racaokg: parseFloat(document.getElementById('racaokg').value),
+      animais: parseInt(document.getElementById('animais').value),
+      timestamp: new Date().getTime()
+    };
+
+    const tx = db.transaction("registros", "readwrite");
+    tx.objectStore("registros").add(registro);
+    tx.oncomplete = () => {
+      mostrarMensagem("Registro salvo no celular!");
+      document.getElementById('racaokg').value = '';
+      document.getElementById('animais').value = '';
       atualizarContador();
-    }
-
-    // SALVAR REGISTRO LOCALMENTE
-    document.getElementById('racaoForm').addEventListener('submit', (e) => {
-      e.preventDefault();
       
-      const rawDate = document.getElementById('data').value;
-      const [ano, mes, dia] = rawDate.split('-');
-      const dataFormatada = `${dia}/${mes}/${ano}`;
+      sincronizarDados();
+    };
+  });
 
-      const registro = {
-        data: dataFormatada,
-        racaokg: parseFloat(document.getElementById('racaokg').value),
-        animais: parseInt(document.getElementById('animais').value),
-        timestamp: new Date().getTime()
-      };
+  function atualizarContador() {
+    if (!db) return;
+    const tx = db.transaction("registros", "readonly");
+    const store = tx.objectStore("registros");
+    const countReq = store.count();
+    countReq.onsuccess = () => {
+      document.getElementById('pendingCount').textContent = countReq.result;
+    };
+  }
 
-      const tx = db.transaction("registros", "readwrite");
-      tx.objectStore("registros").add(registro);
-      tx.oncomplete = () => {
-        mostrarMensagem("Registro salvo no celular!");
-        document.getElementById('racaokg').value = '';
-        document.getElementById('animais').value = '';
-        atualizarContador();
-        
-        if ('serviceWorker' in navigator && 'SyncManager' in window) {
-          navigator.serviceWorker.ready.then((swReg) => {
-            return swReg.sync.register('sync-racao-dados');
-          });
-        }
-        
-        sincronizarDados();
-      };
-    });
+  // Sincronizar com a planilha via POST
+  async function sincronizarDados() {
+    if (!navigator.onLine || !db) return;
 
-    function atualizarContador() {
-      if (!db) return;
-      const tx = db.transaction("registros", "readonly");
-      const store = tx.objectStore("registros");
-      const countReq = store.count();
-      countReq.onsuccess = () => {
-        document.getElementById('pendingCount').textContent = countReq.result;
-      };
-    }
+    const tx = db.transaction("registros", "readonly");
+    const store = tx.objectStore("registros");
+    const getAllReq = store.getAll();
 
-    async function sincronizarDados() {
-      if (!navigator.onLine || !db) return;
+    getAllReq.onsuccess = async () => {
+      const itens = getAllReq.result;
+      if (itens.length === 0) return;
 
-      const tx = db.transaction("registros", "readonly");
-      const store = tx.objectStore("registros");
-      const getAllReq = store.getAll();
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(itens)
+        });
 
-      getAllReq.onsuccess = async () => {
-        const itens = getAllReq.result;
-        if (itens.length === 0) return;
+        const clearTx = db.transaction("registros", "readwrite");
+        clearTx.objectStore("registros").clear();
+        clearTx.oncomplete = () => {
+          mostrarMensagem("Dados sincronizados com a planilha!");
+          atualizarContador();
+        };
+      } catch (err) {
+        console.error("Erro na sincronização:", err);
+      }
+    };
+  }
 
-        try {
-          await fetch(SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(itens)
-          });
-
-          const clearTx = db.transaction("registros", "readwrite");
-          clearTx.objectStore("registros").clear();
-          clearTx.oncomplete = () => {
-            mostrarMensagem("Dados sincronizados com a planilha!");
-            atualizarContador();
-          };
-        } catch (err) {
-          console.error("Erro na sincronização:", err);
-        }
-      };
-    }
-
-    function mostrarMensagem(texto) {
-      const msgBox = document.getElementById('msgBox');
-      msgBox.textContent = texto;
-      msgBox.className = "alert alert-success";
-      msgBox.style.display = "block";
-      setTimeout(() => { msgBox.style.display = "none"; }, 3000);
-    }
-  </script>
-</body>
-</html>
+  function mostrarMensagem(texto) {
+    const msgBox = document.getElementById('msgBox');
+    msgBox.textContent = texto;
+    msgBox.className = "alert alert-success";
+    msgBox.style.display = "block";
+    setTimeout(() => { msgBox.style.display = "none"; }, 3000);
+  }
+</script>
