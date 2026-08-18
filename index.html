@@ -1,171 +1,278 @@
-<script>
-  // CONFIGURAÇÃO DA URL DO WEB APP
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqxd3WJ5OPagY6Gx7OYT6_o7KoV1Gpo2KBQUjzeHeP8-d9cQoCilsks5XTXql9GMPR/exec"; // <--- Mantenha a sua URL do Web App aqui
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lançamento de Ração</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: #f0fdf4; color: #1e293b; min-height: 100vh; padding: 16px; }
+    
+    .container { max-width: 480px; margin: 0 auto; background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #a7f3d0; }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #d1fae5; }
+    .header h2 { font-size: 18px; color: #065f46; }
+    
+    #netStatus { font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 12px; }
+    #netStatus.online { color: #047857; background-color: #d1fae5; }
+    #netStatus.offline { color: #b91c1c; background-color: #fee2e2; }
 
-  const loginScreen = document.getElementById('loginScreen');
-  const appScreen = document.getElementById('appScreen');
-  const loginForm = document.getElementById('loginForm');
-  const loginError = document.getElementById('loginError');
+    .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 14px; font-weight: 600; color: #047857; }
+    .form-group input { padding: 12px; border: 1px solid #a7f3d0; border-radius: 8px; font-size: 16px; outline: none; background-color: #f9fafb; }
+    .form-group input:focus { border-color: #059669; background-color: #fff; }
 
-  // Registrar Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js');
-  }
+    .btn-submit { width: 100%; background-color: #059669; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 8px; }
+    .btn-submit:hover { background-color: #047857; }
 
-  // Monitorar Conexão
-  function updateOnlineStatus() {
-    const netStatus = document.getElementById('netStatus');
-    if (navigator.onLine) {
-      netStatus.textContent = "● Online";
-      netStatus.className = "online";
-      if (localStorage.getItem('dispositivoAtivado') === 'true') {
-        sincronizarDados();
+    .alert { padding: 12px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; text-align: center; font-weight: 600; display: none; }
+    .alert-danger { background-color: #fee2e2; color: #b91c1c; }
+    .alert-success { background-color: #d1fae5; color: #047857; }
+
+    .counter-badge { background: #fef3c7; color: #92400e; padding: 10px; border-radius: 8px; text-align: center; font-size: 13px; font-weight: 600; margin-top: 16px; }
+    .pin-input { font-size: 24px; text-align: center; letter-spacing: 8px; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- TELA DE ATIVAÇÃO / LOGIN -->
+    <div id="loginScreen" style="display: none;">
+      <div class="header">
+        <h2>Ativar Dispositivo</h2>
+      </div>
+      <p style="font-size: 14px; color: #047857; margin-bottom: 16px; text-align: center;">
+        Digite a senha de acesso para liberar o aplicativo.
+      </p>
+      <div id="loginError" class="alert alert-danger">Senha incorreta!</div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="senha">Senha de Acesso:</label>
+          <input type="password" id="senha" class="pin-input" placeholder="****" inputmode="numeric" required>
+        </div>
+        <button type="submit" class="btn-submit">Entrar</button>
+      </form>
+    </div>
+
+    <!-- TELA PRINCIPAL DO APLICATIVO -->
+    <div id="appScreen" style="display: none;">
+      <div class="header">
+        <h2>🌾 Lançamento Ração</h2>
+        <span id="netStatus" class="online">● Online</span>
+      </div>
+
+      <div id="msgBox" class="alert"></div>
+
+      <form id="racaoForm">
+        <div class="form-group">
+          <label for="data">Data do Lançamento:</label>
+          <input type="date" id="data" required>
+        </div>
+
+        <div class="form-group">
+          <label for="racaokg">Quantidade Ração (KG):</label>
+          <input type="number" id="racaokg" step="0.1" placeholder="Ex: 11100" required inputmode="decimal">
+        </div>
+
+        <div class="form-group">
+          <label for="animais">Quantidade Animais:</label>
+          <input type="number" id="animais" placeholder="Ex: 532" required inputmode="numeric">
+        </div>
+
+        <button type="submit" class="btn-submit">Salvar Registro</button>
+      </form>
+
+      <div class="counter-badge">
+        Pendentes de sincronização: <span id="pendingCount">0</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // CONFIGURAÇÃO DA URL DO WEB APP
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqxd3WJ5OPagY6Gx7OYT6_o7KoV1Gpo2KBQUjzeHeP8-d9cQoCilsks5XTXql9GMPR/exec";
+
+    const loginScreen = document.getElementById('loginScreen');
+    const appScreen = document.getElementById('appScreen');
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+
+    // Monitorar Conexão
+    function updateOnlineStatus() {
+      const netStatus = document.getElementById('netStatus');
+      if (!netStatus) return;
+      if (navigator.onLine) {
+        netStatus.textContent = "● Online";
+        netStatus.className = "online";
+        if (localStorage.getItem('dispositivoAtivado') === 'true') {
+          sincronizarDados();
+        }
+      } else {
+        netStatus.textContent = "● Offline";
+        netStatus.className = "offline";
       }
-    } else {
-      netStatus.textContent = "● Offline";
-      netStatus.className = "offline";
     }
-  }
-  window.addEventListener('online', updateOnlineStatus);
-  window.addEventListener('offline', updateOnlineStatus);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
 
-  // Banco de Dados Local (IndexedDB)
-  let db;
-  const request = indexedDB.open("RacaoDB", 1);
-  request.onupgradeneeded = (e) => {
-    db = e.target.result;
-    if (!db.objectStoreNames.contains("registros")) {
-      db.createObjectStore("registros", { keyPath: "id", autoIncrement: true });
-    }
-  };
-  request.onsuccess = (e) => {
-    db = e.target.result;
-    verificarAtivacao();
-  };
+    // Banco de Dados Local (IndexedDB)
+    let db;
+    const request = indexedDB.open("RacaoDB", 1);
+    request.onupgradeneeded = (e) => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("registros")) {
+        db.createObjectStore("registros", { keyPath: "id", autoIncrement: true });
+      }
+    };
+    request.onsuccess = (e) => {
+      db = e.target.result;
+      verificarAtivacao();
+    };
 
-  function verificarAtivacao() {
-    if (localStorage.getItem('dispositivoAtivado') === 'true') {
-      mostrarApp();
-    } else {
-      loginScreen.style.display = 'block';
-      appScreen.style.display = 'none';
-    }
-  }
-
-  // VALIDAÇÃO DA SENHA VIA API DO GOOGLE APPS SCRIPT
-  loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const senhaDigitada = document.getElementById('senha').value;
-
-    if (!navigator.onLine) {
-      alert("Para ativar o dispositivo pela primeira vez, você precisa estar conectado à internet.");
-      return;
-    }
-
-    try {
-      // Faz a verificação no servidor do Google via API
-      const response = await fetch(`${SCRIPT_URL}?pass=${encodeURIComponent(senhaDigitada)}`);
-      const data = await response.json();
-
-      if (data.status === "success") {
-        localStorage.setItem('dispositivoAtivado', 'true');
-        loginError.style.display = 'none';
-        document.getElementById('senha').value = '';
+    function verificarAtivacao() {
+      if (localStorage.getItem('dispositivoAtivado') === 'true') {
         mostrarApp();
       } else {
-        loginError.innerText = "Senha incorreta!";
-        loginError.style.display = 'block';
-        document.getElementById('senha').value = '';
+        if (loginScreen) loginScreen.style.display = 'block';
+        if (appScreen) appScreen.style.display = 'none';
       }
-    } catch (err) {
-      console.error("Erro ao validar senha:", err);
-      loginError.innerText = "Erro ao conectar ao servidor. Tente novamente.";
-      loginError.style.display = 'block';
     }
-  });
 
-  function mostrarApp() {
-    loginScreen.style.display = 'none';
-    appScreen.style.display = 'block';
-    document.getElementById('data').valueAsDate = new Date();
-    updateOnlineStatus();
-    atualizarContador();
-  }
+    // VALIDAÇÃO DA SENHA VIA API DO GOOGLE APPS SCRIPT
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const senhaInput = document.getElementById('senha');
+        const senhaDigitada = senhaInput ? senhaInput.value : '';
 
-  // Gravar registro localmente
-  document.getElementById('racaoForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    const rawDate = document.getElementById('data').value;
-    const [ano, mes, dia] = rawDate.split('-');
-    const dataFormatada = `${dia}/${mes}/${ano}`;
+        if (!navigator.onLine) {
+          alert("Para ativar o dispositivo pela primeira vez, você precisa estar conectado à internet.");
+          return;
+        }
 
-    const registro = {
-      data: dataFormatada,
-      racaokg: parseFloat(document.getElementById('racaokg').value),
-      animais: parseInt(document.getElementById('animais').value),
-      timestamp: new Date().getTime()
-    };
+        try {
+          const response = await fetch(`${SCRIPT_URL}?pass=${encodeURIComponent(senhaDigitada)}`);
+          const data = await response.json();
 
-    const tx = db.transaction("registros", "readwrite");
-    tx.objectStore("registros").add(registro);
-    tx.oncomplete = () => {
-      mostrarMensagem("Registro salvo no celular!");
-      document.getElementById('racaokg').value = '';
-      document.getElementById('animais').value = '';
+          if (data.status === "success" || data.result === "success") {
+            localStorage.setItem('dispositivoAtivado', 'true');
+            if (loginError) loginError.style.display = 'none';
+            if (senhaInput) senhaInput.value = '';
+            mostrarApp();
+          } else {
+            if (loginError) {
+              loginError.innerText = "Senha incorreta!";
+              loginError.style.display = 'block';
+            }
+            if (senhaInput) senhaInput.value = '';
+          }
+        } catch (err) {
+          console.error("Erro ao validar senha:", err);
+          if (loginError) {
+            loginError.innerText = "Erro ao conectar ao servidor. Tente novamente.";
+            loginError.style.display = 'block';
+          }
+        }
+      });
+    }
+
+    function mostrarApp() {
+      if (loginScreen) loginScreen.style.display = 'none';
+      if (appScreen) appScreen.style.display = 'block';
+      const dataInput = document.getElementById('data');
+      if (dataInput) dataInput.valueAsDate = new Date();
+      updateOnlineStatus();
       atualizarContador();
-      
-      sincronizarDados();
-    };
-  });
+    }
 
-  function atualizarContador() {
-    if (!db) return;
-    const tx = db.transaction("registros", "readonly");
-    const store = tx.objectStore("registros");
-    const countReq = store.count();
-    countReq.onsuccess = () => {
-      document.getElementById('pendingCount').textContent = countReq.result;
-    };
-  }
+    // Gravar registro localmente
+    const racaoForm = document.getElementById('racaoForm');
+    if (racaoForm) {
+      racaoForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        const rawDate = document.getElementById('data').value;
+        const [ano, mes, dia] = rawDate.split('-');
+        const dataFormatada = `${dia}/${mes}/${ano}`;
 
-  // Sincronizar com a planilha via POST
-  async function sincronizarDados() {
-    if (!navigator.onLine || !db) return;
-
-    const tx = db.transaction("registros", "readonly");
-    const store = tx.objectStore("registros");
-    const getAllReq = store.getAll();
-
-    getAllReq.onsuccess = async () => {
-      const itens = getAllReq.result;
-      if (itens.length === 0) return;
-
-      try {
-        await fetch(SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(itens)
-        });
-
-        const clearTx = db.transaction("registros", "readwrite");
-        clearTx.objectStore("registros").clear();
-        clearTx.oncomplete = () => {
-          mostrarMensagem("Dados sincronizados com a planilha!");
-          atualizarContador();
+        const registro = {
+          data: dataFormatada,
+          racaokg: parseFloat(document.getElementById('racaokg').value),
+          animais: parseInt(document.getElementById('animais').value),
+          timestamp: new Date().getTime()
         };
-      } catch (err) {
-        console.error("Erro na sincronização:", err);
-      }
-    };
-  }
 
-  function mostrarMensagem(texto) {
-    const msgBox = document.getElementById('msgBox');
-    msgBox.textContent = texto;
-    msgBox.className = "alert alert-success";
-    msgBox.style.display = "block";
-    setTimeout(() => { msgBox.style.display = "none"; }, 3000);
-  }
-</script>
+        const tx = db.transaction("registros", "readwrite");
+        tx.objectStore("registros").add(registro);
+        tx.oncomplete = () => {
+          mostrarMensagem("Registro salvo no celular!");
+          document.getElementById('racaokg').value = '';
+          document.getElementById('animais').value = '';
+          atualizarContador();
+          
+          sincronizarDados();
+        };
+      });
+    }
+
+    function atualizarContador() {
+      if (!db) return;
+      const tx = db.transaction("registros", "readonly");
+      const store = tx.objectStore("registros");
+      const countReq = store.count();
+      countReq.onsuccess = () => {
+        const pendingCount = document.getElementById('pendingCount');
+        if (pendingCount) pendingCount.textContent = countReq.result;
+      };
+    }
+
+    // Sincronizar com a planilha via POST
+    async function sincronizarDados() {
+      if (!navigator.onLine || !db) return;
+
+      const tx = db.transaction("registros", "readonly");
+      const store = tx.objectStore("registros");
+      const getAllReq = store.getAll();
+
+      getAllReq.onsuccess = async () => {
+        const itens = getAllReq.result;
+        if (itens.length === 0) return;
+
+        try {
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(itens)
+          });
+
+          const clearTx = db.transaction("registros", "readwrite");
+          clearTx.objectStore("registros").clear();
+          clearTx.oncomplete = () => {
+            mostrarMensagem("Dados sincronizados com a planilha!");
+            atualizarContador();
+          };
+        } catch (err) {
+          console.error("Erro na sincronização:", err);
+        }
+      };
+    }
+
+    function mostrarMensagem(texto) {
+      const msgBox = document.getElementById('msgBox');
+      if (!msgBox) return;
+      msgBox.textContent = texto;
+      msgBox.className = "alert alert-success";
+      msgBox.style.display = "block";
+      setTimeout(() => { msgBox.style.display = "none"; }, 3000);
+    }
+  </script>
+</body>
+</html>
