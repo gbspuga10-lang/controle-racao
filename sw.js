@@ -1,4 +1,4 @@
-const CACHE_NAME = 'racao-app-v5';
+const CACHE_NAME = 'racao-app-v6';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
